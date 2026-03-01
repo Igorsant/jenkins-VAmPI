@@ -45,15 +45,27 @@ pipeline {
                     // Run with the standard Python security + OWASP rulesets.
                     // --error makes Semgrep exit 1 when findings exist; remove it
                     // if you want the pipeline to continue regardless.
+                    // Run twice: --output only accepts one file per invocation
+                    sh """
+                        semgrep scan \
+                            --config "p/python" \
+                            --config "p/owasp-top-ten" \
+                            --config "p/flask" \
+                            --json \
+                            --metrics=off \
+                            --output ${SEMGREP_REPORT} \
+                            .
+                    """
+
                     def semgrepStatus = sh(
                         script: """
                             semgrep scan \
                                 --config "p/python" \
                                 --config "p/owasp-top-ten" \
                                 --config "p/flask" \
-                                --json --output ${SEMGREP_REPORT} \
-                                --sarif --output ${SEMGREP_SARIF} \
+                                --sarif \
                                 --metrics=off \
+                                --output ${SEMGREP_SARIF} \
                                 .
                         """,
                         returnStatus: true
