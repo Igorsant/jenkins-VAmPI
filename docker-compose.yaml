@@ -1,17 +1,95 @@
-version: "3"
-services:
- vampi-secure:
-  build: ./
-  container_name: vampi-secure
-  ports:
-   - 5001:5000
-  environment:
-   - vulnerable=0
+version: "3.8"
 
- vampi-vulnerable:
-  build: ./
-  container_name: vampi-vulnerable
-  ports:
-   - 5002:5000
-  environment:
-   - vulnerable=1
+services:
+
+  # ─────────────────────────────────────────────────────────
+  # VAmPI — target application
+  # ─────────────────────────────────────────────────────────
+  # vampi-secure:
+  #   build: ./
+  #   container_name: vampi-secure
+  #   ports:
+  #     - "5001:5000"
+  #   environment:
+  #     - vulnerable=0
+  #   networks:
+  #     - devsecops
+
+  # vampi-vulnerable:
+  #   build: ./
+  #   container_name: vampi-vulnerable
+  #   ports:
+  #     - "5002:5000"
+  #   environment:
+  #     - vulnerable=1
+  #   networks:
+  #     - devsecops
+
+  # ─────────────────────────────────────────────────────────
+  # Jenkins — CI/CD server
+  # Runs as root with Docker socket mounted so pipeline stages
+  # can spin up Docker containers (Semgrep, cdxgen, etc.)
+  # ─────────────────────────────────────────────────────────
+  jenkins:
+    build: ./jenkins
+    container_name: jenkins
+    user: root
+    ports:
+      - "8080:8080"    # Web UI
+      - "50000:50000"  # Agent communication
+    volumes:
+      - jenkins_data:/var/jenkins_home
+      - /var/run/docker.sock:/var/run/docker.sock  # Docker-outside-of-Docker
+      - ./:/workspace/VAmPI                        # Project source code
+    environment:
+      - DOCKER_HOST=unix:///var/run/docker.sock
+    networks:
+      - devsecops
+    restart: unless-stopped
+
+  # ─────────────────────────────────────────────────────────
+  # Dependency Track — API Server
+  # Accessible at http://localhost:8081
+  # ─────────────────────────────────────────────────────────
+  dependency-track-api:
+    image: dependencytrack/apiserver:latest
+    container_name: dependency-track-api
+    ports:
+      - "8081:8080"
+    volumes:
+      - dependency_track_data:/data
+    environment:
+      - ALPINE_DATA_DIRECTORY=/data
+    mem_limit: 5g
+    mem_reservation: 1g
+    networks:
+      - devsecops
+    restart: unless-stopped
+
+  # ─────────────────────────────────────────────────────────
+  # Dependency Track — Frontend
+  # Accessible at http://localhost:8082
+  # API_BASE_URL must point to the host-exposed API port
+  # because the browser (not Docker) resolves this URL
+  # ─────────────────────────────────────────────────────────
+  dependency-track-frontend:
+    image: dependencytrack/frontend:latest
+    container_name: dependency-track-frontend
+    ports:
+      - "8082:8080"
+    environment:
+      - API_BASE_URL=http://localhost:8081
+    depends_on:
+      dependency-track-api:
+        condition: service_started
+    networks:
+      - devsecops
+    restart: unless-stopped
+
+networks:
+  devsecops:
+    driver: bridge
+
+volumes:
+  jenkins_data:
+  dependency_track_data:
